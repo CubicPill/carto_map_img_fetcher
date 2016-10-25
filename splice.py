@@ -15,14 +15,18 @@ def main():
 def splice_img(x_tile_min, x_tile_max, y_tile_min, y_tile_max, name, retina):
     x_range = list(range(x_tile_min, x_tile_max))
     y_range = list(range(y_tile_min, y_tile_max))
-    new_img = Image.new('RGB', (len(x_range) * 512, len(y_range) * 512))
+    edge_size=256
     suffix = ''
     if retina:
+        edge_size=512
         suffix = '@2x'
+    new_img = Image.new('RGB', (len(x_range) * edge_size, len(y_range) * edge_size))
+
+
     for y in y_range:
         for x in x_range:
             image = Image.open('./map_img/{}_{}{}.png'.format(x, y, suffix))
-            new_img.paste(image, ((x - x_range[0]) * 512, (y - y_range[0]) * 512))
+            new_img.paste(image, ((x - x_range[0]) * edge_size, (y - y_range[0]) * edge_size))
     new_img.save('{}.png'.format(name))
 
 
