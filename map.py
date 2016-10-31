@@ -4,15 +4,16 @@ import os, sys, getopt
 from queue import Queue
 from splice import splice_img
 import math
+from tqdm import tqdm
 
 all_count = 0
-success_count = 0
 zoom = None
 cdn_server = 'a'
 base_map = 'light'
 retina = False
 splice = False
 img_name = 'spliced'
+bar = None
 
 
 class Downloader(Thread):
@@ -29,13 +30,13 @@ class Downloader(Thread):
             url = 'http://{}.basemaps.cartocdn.com/{}_all/{}/{}{}.png'.format(cdn_server, base_map, zoom, key, suffix)
             try:
                 downloadImageFile(url)
-                global success_count
-                global success_count
-                success_count += 1
-                print('{}: key {} done {}/{}'.format(self.name, key, success_count, all_count))
+                global bar
+                bar.update()
             except:
-                print('*****************FAILURE***************** {}'.format(key))
                 self.queue.put(key)
+            finally:
+                self.queue.task_done()
+                bar.update(0)
 
 
 def downloadImageFile(imgUrl):
@@ -128,25 +129,24 @@ def main():
     min_xtile, max_ytile = calc_tile(lat=lat_min, lng=lng_min, zoom=zoom)
     max_xtile, min_ytile = calc_tile(lat=lat_max, lng=lng_max, zoom=zoom)
     print('x:{}-{},y:{}-{}'.format(min_xtile, max_xtile, min_ytile, max_ytile))
-    pool_size = min(pool_size, (max_xtile - min_xtile + 1) * (max_ytile - min_ytile + 1))
+    task_num = (max_xtile - min_xtile + 1) * (max_ytile - min_ytile + 1)
+    pool_size = min(pool_size, task_num)
     print('lat:({},{}),lng:({},{}),z={},server={},base_map={},retina={},splice={},thread_number={}'
           .format(lat_min, lat_max, lng_min, lng_max, zoom, cdn_server, base_map, retina, splice, pool_size))
-    print('Proceed? (y/n)')
-    if input() != 'y':
+    if input('Proceed? (y/n) ') != 'y':
         sys.exit('Exited')
+    global bar
+    bar = tqdm(total=task_num)
     keys_queue = Queue()
 
     x_range = list(range(min_xtile, max_xtile))
     y_range = list(range(min_ytile, max_ytile))
     x_range.append(max_xtile)
     y_range.append(max_ytile)
-    print(x_range, y_range)
     for y in y_range:
         for x in x_range:
             key = '{}/{}'.format(x, y)
             keys_queue.put(key)
-    global all_count
-    all_count = keys_queue.qsize()
 
     thread_pool = []
     for i in range(0, pool_size):
@@ -154,8 +154,8 @@ def main():
         thread_pool.append(img_thread)
     for img_thread in thread_pool:
         img_thread.start()
-    for img_thread in thread_pool:
-        img_thread.join()
+    keys_queue.join()
+    bar.close()
     print('Map tile images fetching done!')
 
     if splice:
