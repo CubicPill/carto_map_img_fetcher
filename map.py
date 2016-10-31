@@ -3,6 +3,7 @@ from threading import Thread
 import os, sys, getopt
 from queue import Queue
 from splice import splice_img
+import math
 
 all_count = 0
 success_count = 0
@@ -48,13 +49,21 @@ def downloadImageFile(imgUrl):
     return local_filename
 
 
+def calc_tile(lat, lng, zoom):
+    lat_rad = math.radians(lat)
+    n = 2.0 ** zoom
+    xtile = int((lng + 180.0) / 360.0 * n)
+    ytile = int((1.0 - math.log(math.tan(lat_rad) + (1 / math.cos(lat_rad))) / math.pi) / 2.0 * n)
+    return (xtile, ytile)
+
+
 def print_help():
     print('Parameters:')
     print('-h             help')
-    print('   --xmin      min x tile')
-    print('   --xmax      max x tile')
-    print('   --ymin      min y tile')
-    print('   --ymax      max y tile')
+    print('   --minlat')
+    print('   --maxlat')
+    print('   --minlng')
+    print('   --maxlng')
     print('-z --zoomlevel zoom level(0-19)')
     print('-c --server=   cdn server for Carto, can be "a", "b" or "c", default "a"')
     print('-b --base      base map layer, can be "light" or "dark", default "light"')
@@ -67,26 +76,28 @@ def main():
     if not sys.argv[1:]:
         print_help()
         sys.exit(0)
-    x_min = None
-    x_max = None
-    y_min = None
-    y_max = None
+
+    lat_min = None
+    lat_max = None
+    lng_min = None
+    lng_max = None
     pool_size = 32
     if not os.path.isdir('map_img'):
         os.mkdir('map_img')
     short_args = 'hrz:st:b:c:'
-    long_args = ['xmin=', 'xmax=', 'ymin=', 'ymax=', 'zoomlevel=', 'server=', 'base=', 'retina', 'splice', 'help',
+    long_args = ['minlat=', 'maxlat=', 'minlng=', 'maxlng=', 'zoomlevel=', 'server=', 'base=', 'retina', 'splice',
+                 'help',
                  'thread=']
     opts, args = getopt.getopt(sys.argv[1:], short_args, long_args)
     for opt, value in opts:
-        if opt == '--xmin':
-            x_min = int(value)
-        elif opt == '--xmax':
-            x_max = int(value)
-        elif opt == '--ymin':
-            y_min = int(value)
-        elif opt == '--ymax':
-            y_max = int(value)
+        if opt == '--minlat':
+            lat_min = float(value)
+        elif opt == '--maxlat':
+            lat_max = float(value)
+        elif opt == '--minlng':
+            lng_min = float(value)
+        elif opt == '--maxlng':
+            lng_max = float(value)
         elif opt == '-z' or opt == '--zoom':
             global zoom
             zoom = int(value)
@@ -106,22 +117,30 @@ def main():
                 global img_name
                 img_name = value
         elif opt == '-t' or opt == '--thread':
-            pool_size = int(value)
+            pool_size = float(value)
         elif opt == '-h' or opt == '--help':
             print_help()
             sys.exit(0)
-    if x_min is None or x_max is None or y_min is None or y_max is None or zoom is None:
+    if lat_min is None or lat_max is None or lng_min is None or lng_max is None or zoom is None:
         print('Missing parameters!')
         sys.exit(1)
-    print('x:({},{}),y:({},{}),z={},server={},base_map={},retina={},splice={},thread_number={}'
-          .format(x_min, x_max, y_min, y_max, zoom, cdn_server, base_map, retina, splice, pool_size))
+
+    min_xtile, max_ytile = calc_tile(lat=lat_min, lng=lng_min, zoom=zoom)
+    max_xtile, min_ytile = calc_tile(lat=lat_max, lng=lng_max, zoom=zoom)
+    print('x:{}-{},y:{}-{}'.format(min_xtile, max_xtile, min_ytile, max_ytile))
+    pool_size = min(pool_size, (max_xtile - min_xtile + 1) * (max_ytile - min_ytile + 1))
+    print('lat:({},{}),lng:({},{}),z={},server={},base_map={},retina={},splice={},thread_number={}'
+          .format(lat_min, lat_max, lng_min, lng_max, zoom, cdn_server, base_map, retina, splice, pool_size))
     print('Proceed? (y/n)')
     if input() != 'y':
         sys.exit('Exited')
     keys_queue = Queue()
 
-    x_range = list(range(x_min, x_max))
-    y_range = list(range(y_min, y_max))
+    x_range = list(range(min_xtile, max_xtile))
+    y_range = list(range(min_ytile, max_ytile))
+    x_range.append(max_xtile)
+    y_range.append(max_ytile)
+    print(x_range, y_range)
     for y in y_range:
         for x in x_range:
             key = '{}/{}'.format(x, y)
@@ -141,7 +160,7 @@ def main():
 
     if splice:
         print('Start splicing...')
-        splice_img(x_min, x_max, y_min, y_max, img_name, retina)
+        splice_img(min_xtile, max_xtile, min_ytile, max_ytile, img_name, retina)
         print('Image splicing done!')
 
 
