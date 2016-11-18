@@ -118,7 +118,7 @@ def main():
                 global img_name
                 img_name = value
         elif opt == '-t' or opt == '--thread':
-            pool_size = float(value)
+            pool_size = int(value)
         elif opt == '-h' or opt == '--help':
             print_help()
             sys.exit(0)
